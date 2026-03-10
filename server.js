@@ -82,6 +82,11 @@ app.get("/file", async (req, res) => {
     const path = req.query.path;
     const ref = req.query.ref || undefined;
 
+      // защита от чтения секретных файлов
+    if (path.includes(".env")) {
+      return res.status(403).json({ error: "Forbidden file" });
+    }
+
     if (!owner || !repo || !token) {
       return res.status(500).json({
         error: "Missing required environment variables",

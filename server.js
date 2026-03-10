@@ -9,6 +9,14 @@ function buildOctokit() {
   });
 }
 
+function getConfig() {
+  return {
+    owner: process.env.GITHUB_OWNER,
+    repo: process.env.GITHUB_REPO,
+    token: process.env.GITHUB_TOKEN,
+  };
+}
+
 app.get("/", (req, res) => {
   res.send("BTRussia MCP server running");
 });
@@ -29,9 +37,7 @@ app.get("/health", (req, res) => {
 
 app.get("/repo", async (req, res) => {
   try {
-    const owner = process.env.GITHUB_OWNER;
-    const repo = process.env.GITHUB_REPO;
-    const token = process.env.GITHUB_TOKEN;
+    const { owner, repo, token } = getConfig();
 
     if (!owner || !repo || !token) {
       return res.status(500).json({
@@ -64,6 +70,112 @@ app.get("/repo", async (req, res) => {
       error: "Failed to fetch repository",
       message: error.message,
       status: error.status || 500,
+      owner: process.env.GITHUB_OWNER || null,
+      repo: process.env.GITHUB_REPO || null,
+    });
+  }
+});
+
+app.get("/file", async (req, res) => {
+  try {
+    const { owner, repo, token } = getConfig();
+    const path = req.query.path;
+    const ref = req.query.ref || undefined;
+
+    if (!owner || !repo || !token) {
+      return res.status(500).json({
+        error: "Missing required environment variables",
+      });
+    }
+
+    if (!path) {
+      return res.status(400).json({
+        error: "Query parameter 'path' is required",
+      });
+    }
+
+    const octokit = buildOctokit();
+
+    const response = await octokit.repos.getContent({
+      owner,
+      repo,
+      path,
+      ref,
+    });
+
+    if (Array.isArray(response.data)) {
+      return res.status(400).json({
+        error: "Path points to a directory, not a file",
+        path,
+      });
+    }
+
+    const content = Buffer.from(response.data.content, "base64").toString("utf-8");
+
+    return res.json({
+      path: response.data.path,
+      name: response.data.name,
+      sha: response.data.sha,
+      size: response.data.size,
+      content,
+    });
+  } catch (error) {
+    console.error("GitHub file read error:", error);
+
+    return res.status(error.status || 500).json({
+      error: "Failed to fetch file",
+      message: error.message,
+      status: error.status || 500,
+      path: req.query.path || null,
+    });
+  }
+});
+
+app.get("/dir", async (req, res) => {
+  try {
+    const { owner, repo, token } = getConfig();
+    const path = req.query.path || "";
+    const ref = req.query.ref || undefined;
+
+    if (!owner || !repo || !token) {
+      return res.status(500).json({
+        error: "Missing required environment variables",
+      });
+    }
+
+    const octokit = buildOctokit();
+
+    const response = await octokit.repos.getContent({
+      owner,
+      repo,
+      path,
+      ref,
+    });
+
+    if (!Array.isArray(response.data)) {
+      return res.status(400).json({
+        error: "Path points to a file, not a directory",
+        path,
+      });
+    }
+
+    return res.json({
+      path,
+      items: response.data.map((item) => ({
+        name: item.name,
+        path: item.path,
+        type: item.type,
+        size: item.size ?? null,
+      })),
+    });
+  } catch (error) {
+    console.error("GitHub dir read error:", error);
+
+    return res.status(error.status || 500).json({
+      error: "Failed to fetch directory",
+      message: error.message,
+      status: error.status || 500,
+      path: req.query.path || "",
     });
   }
 });

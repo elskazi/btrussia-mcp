@@ -17,8 +17,20 @@ function getConfig() {
   };
 }
 
+const forbidden = [".env", ".key", ".pem", "id_rsa", ".p12", ".crt"];
+
+function isForbidden(path) {
+  return forbidden.some((item) => path.includes(item));
+}
+
 app.get("/", (req, res) => {
   res.send("BTRussia MCP server running");
+});
+
+app.get("/version", (req, res) => {
+  res.json({
+    version: "forbidden-files-v2",
+  });
 });
 
 app.get("/health", (req, res) => {
@@ -27,9 +39,6 @@ app.get("/health", (req, res) => {
     owner: process.env.GITHUB_OWNER ?? null,
     repo: process.env.GITHUB_REPO ?? null,
     hasToken: Boolean(process.env.GITHUB_TOKEN),
-    tokenPrefix: process.env.GITHUB_TOKEN
-      ? process.env.GITHUB_TOKEN.slice(0, 10)
-      : null,
     railwayEnv: process.env.RAILWAY_ENVIRONMENT_NAME ?? null,
     railwayService: process.env.RAILWAY_SERVICE_NAME ?? null,
   });
@@ -42,9 +51,6 @@ app.get("/repo", async (req, res) => {
     if (!owner || !repo || !token) {
       return res.status(500).json({
         error: "Missing required environment variables",
-        ownerExists: Boolean(owner),
-        repoExists: Boolean(repo),
-        tokenExists: Boolean(token),
       });
     }
 
@@ -70,8 +76,6 @@ app.get("/repo", async (req, res) => {
       error: "Failed to fetch repository",
       message: error.message,
       status: error.status || 500,
-      owner: process.env.GITHUB_OWNER || null,
-      repo: process.env.GITHUB_REPO || null,
     });
   }
 });
@@ -82,20 +86,22 @@ app.get("/file", async (req, res) => {
     const path = req.query.path;
     const ref = req.query.ref || undefined;
 
-      // защита от чтения секретных файлов
-    if (path.includes(".env")) {
-      return res.status(403).json({ error: "Forbidden file" });
+    if (!path) {
+      return res.status(400).json({
+        error: "Query parameter 'path' is required",
+      });
+    }
+
+    if (isForbidden(path)) {
+      return res.status(403).json({
+        error: "Forbidden file",
+        path,
+      });
     }
 
     if (!owner || !repo || !token) {
       return res.status(500).json({
         error: "Missing required environment variables",
-      });
-    }
-
-    if (!path) {
-      return res.status(400).json({
-        error: "Query parameter 'path' is required",
       });
     }
 
@@ -164,14 +170,18 @@ app.get("/dir", async (req, res) => {
       });
     }
 
-    return res.json({
-      path,
-      items: response.data.map((item) => ({
+    const items = response.data
+      .filter((item) => !isForbidden(item.path))
+      .map((item) => ({
         name: item.name,
         path: item.path,
         type: item.type,
         size: item.size ?? null,
-      })),
+      }));
+
+    return res.json({
+      path,
+      items,
     });
   } catch (error) {
     console.error("GitHub dir read error:", error);

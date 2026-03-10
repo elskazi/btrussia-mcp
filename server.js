@@ -3,9 +3,11 @@ import { Octokit } from "@octokit/rest";
 
 const app = express();
 
-const octokit = new Octokit({
-  auth: process.env.GITHUB_TOKEN,
-});
+function buildOctokit() {
+  return new Octokit({
+    auth: process.env.GITHUB_TOKEN,
+  });
+}
 
 app.get("/", (req, res) => {
   res.send("BTRussia MCP server running");
@@ -14,9 +16,14 @@ app.get("/", (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     ok: true,
-    owner: process.env.GITHUB_OWNER || null,
-    repo: process.env.GITHUB_REPO || null,
+    owner: process.env.GITHUB_OWNER ?? null,
+    repo: process.env.GITHUB_REPO ?? null,
     hasToken: Boolean(process.env.GITHUB_TOKEN),
+    tokenPrefix: process.env.GITHUB_TOKEN
+      ? process.env.GITHUB_TOKEN.slice(0, 10)
+      : null,
+    railwayEnv: process.env.RAILWAY_ENVIRONMENT_NAME ?? null,
+    railwayService: process.env.RAILWAY_SERVICE_NAME ?? null,
   });
 });
 
@@ -24,15 +31,18 @@ app.get("/repo", async (req, res) => {
   try {
     const owner = process.env.GITHUB_OWNER;
     const repo = process.env.GITHUB_REPO;
+    const token = process.env.GITHUB_TOKEN;
 
-    if (!owner || !repo || !process.env.GITHUB_TOKEN) {
+    if (!owner || !repo || !token) {
       return res.status(500).json({
         error: "Missing required environment variables",
         ownerExists: Boolean(owner),
         repoExists: Boolean(repo),
-        tokenExists: Boolean(process.env.GITHUB_TOKEN),
+        tokenExists: Boolean(token),
       });
     }
+
+    const octokit = buildOctokit();
 
     const response = await octokit.repos.get({
       owner,
